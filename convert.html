@@ -81,10 +81,20 @@ function rev(a){ return a.slice().reverse(); }
 function parseF(lines){
   const idx = find(lines, "Ｆ");
   if(idx < 0) return Array(6).fill("なし");
-  const raw = lines.slice(Math.max(0, idx - 6), idx); // 6→1
-  while(raw.length < 6) raw.unshift("-");
-  const ordered = raw.reverse(); // 1→6
-  return ordered.map(v => {
+
+  const raw = [];
+  for(let i = idx - 1; i >= 0 && raw.length < 6; i--){
+    const s = lines[i];
+    if(s === "-" || /^\d+\s*\((未|済)\)$/.test(s)){
+      raw.push(s);
+    }
+  }
+
+  while(raw.length < 6) raw.push("-");
+
+  raw.reverse();
+
+  return raw.map(v => {
     if(v === "-" || v === "") return "なし";
     const m = v.match(/^(\d+)\s*\((未|済)\)$/);
     return m ? "F" + m[1] : "なし";
