@@ -94,18 +94,24 @@
 
     // 1. データ自動取得（シミュレーション）
     async function autoFetchData() {
-        // 本来は fetch('https://your-github-io/data.json') などで取得
-        alert("GitHub上の最新データを取得しました（デモデータ）");
-        const demoData = [
-            {id:1, s:95.2, n:"佐藤"}, {id:2, s:92.1, n:"鈴木"}, {id:3, s:89.5, n:"高橋"},
-            {id:4, s:88.0, n:"田中"}, {id:5, s:91.4, n:"伊藤"}, {id:6, s:85.2, n:"渡辺"},
-            {id:7, s:93.8, n:"山本"}, {id:8, s:84.5, n:"中村"}, {id:9, s:90.1, n:"小林"}
-        ];
-        demoData.forEach(d => {
-            document.getElementById(`score${d.id}`).value = d.s;
-            document.getElementById(`name${d.id}`).value = d.n;
+    try {
+        // 同じ場所にある data.json を読みに行く
+        const response = await fetch('data.json');
+        const data = await response.json();
+        
+        data.forEach(d => {
+            if(document.getElementById(`score${d.id}`)) {
+                document.getElementById(`score${d.id}`).value = d.s;
+                document.getElementById(`name${d.id}`).value = d.n;
+            }
         });
+        alert("GitHubから最新データを取得しました！");
+    } catch (error) {
+        console.error("エラー:", error);
+        alert("データの読み込みに失敗しました。ファイルがあるか確認してね。");
     }
+}
+
 
     // 2. 予測計算（ライン考慮版）
     function runCalculation() {
