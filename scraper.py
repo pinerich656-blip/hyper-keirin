@@ -1,68 +1,72 @@
 import requests
 import json
 import time
-import re
 from datetime import datetime
 
 def get_keirin_data():
+    # 本物のスマホブラウザを完璧に模倣するヘッダー
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja-jp",
     }
     
     today = datetime.now().strftime("%Y%m%d")
     master_data = {}
 
     try:
-        # オッズパークの開催一覧ページを狙う
-        list_url = f"https://www.oddspark.com/keirin/KaisaiYotei.do?request_date={today}"
-        res = requests.get(list_url, headers=headers, timeout=15)
+        # ターゲット：netkeirinの出走表一覧
+        # ※GitHub（海外）からでも比較的通りやすいURL構造を狙う
+        url = f"https://keirin.netkeiba.com/db/program/?date={today}"
         
-        # 開催されている「場名」と「場コード」を抽出
-        # 例: /keirin/KaisaiInfo.do?kaisaiBi=20240409&joCode=61
-        stadiums = re.findall(r'joCode=(\d+)">([^<]+)競輪', res.text)
+        session = requests.Session() # セッションを維持して「人間らしさ」を出す
+        res = session.get(url, headers=headers, timeout=15)
+        
+        import re
+        # 開催場とIDを抽出
+        stadiums = re.findall(r'bankid=(\d+)".*?title="([^"]+)"', res.text)
         
         if not stadiums:
-            # もし見つからなかったら、強引に「今日の主要場」を決め打ちで探しに行く
-            stadiums = [("61", "久留米"), ("71", "松山"), ("31", "大宮")] 
-
-        for jo_code, name in stadiums:
-            print(f"【{name}】を取得中...")
-            stadium_races = {}
-            
-            for r in range(1, 13):
-                # 出走表ページ
-                race_url = f"https://www.oddspark.com/keirin/Yoso.do?kaisaiBi={today}&joCode={jo_code}&raceNo={r}"
-                r_res = requests.get(race_url, headers=headers, timeout=15)
+            print("開催が見つかりませんでした。")
+        else:
+            for bankid, name in stadiums:
+                print(f"【{name}】を取得中...")
+                stadium_races = {}
                 
-                # 選手名と得点を抽出
-                # オッズパークの構造：<td class="name">...<a ...>選手名</a>
-                # 競走得点は <td>直近4ヶ月</td> の次あたりにある数字
-                names = re.findall(r'class="name">.*?<a[^>]*>([^<]+)</a>', r_res.text, re.DOTALL)
-                scores = re.findall(r'<td>(\d{2,3}\.\d{1,2})</td>', r_res.text)
+                # 負荷をかけないよう、各場1R〜12Rを丁寧に取得
+                for r in range(1, 13):
+                    race_url = f"https://keirin.netkeiba.com/db/shusso/?bankid={bankid}&race_no={r}"
+                    r_res = session.get(race_url, headers=headers, timeout=15)
+                    
+                    # 選手名と得点を抽出（正規表現で柔軟に）
+                    names = re.findall(r'class="PlayerName">(.*?)</span>', r_res.text)
+                    scores = re.findall(r'class="Score">(\d+\.\d+)</span>', r_res.text)
+                    
+                    players = []
+                    for i in range(len(names)):
+                        p_name = names[i].strip()
+                        p_score = float(scores[i]) if i < len(scores) else 0.0
+                        players.append({"id": i+1, "s": p_score, "n": p_name})
+                    
+                    if players:
+                        stadium_races[str(r)] = players
+                    
+                    # サーバーへの礼儀：1秒待機
+                    time.sleep(1) 
                 
-                players = []
-                for i in range(len(names)):
-                    p_name = names[i].strip()
-                    # 得点リストからそれっぽい位置の数字を拾う（0番目は違うことが多いので調整）
-                    p_score = float(scores[i]) if i < len(scores) else 0.0
-                    players.append({"id": i+1, "s": p_score, "n": p_name})
-                
-                if players:
-                    stadium_races[str(r)] = players
-                time.sleep(0.8) # ブロックされないようにゆっくり
-            
-            if stadium_races:
                 master_data[name] = stadium_races
 
     except Exception as e:
-        print(f"エラー: {e}")
+        print(f"エラーが発生したよ: {e}")
 
-    # 万が一空っぽだったら、意地でもデータを出すための最終防衛ライン
-    if not master_data:
-        master_data["通信待ち"] = {str(r): [{"id": i, "s": 0, "n": "反映待ち"} for i in range(1, 10)] for r in range(1, 13)}
-
-    with open('data.json', 'w', encoding='utf-8') as f:
-        json.dump(master_data, f, ensure_ascii=False, indent=2)
+    # 万が一失敗しても、アプリを壊さないための空データを書き込まない工夫
+    if master_data:
+        with open('data.json', 'w', encoding='utf-8') as f:
+            json.dump(master_data, f, ensure_ascii=False, indent=2)
+        print("データの更新に成功したよ！")
+    else:
+        print("データが取得できなかったため、更新をスキップしました。")
 
 if __name__ == "__main__":
     get_keirin_data()
+
