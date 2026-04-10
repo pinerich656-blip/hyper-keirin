@@ -104,49 +104,56 @@
       }
 
       // --- データ整形：数字の塊から脚質を自動判定 ---
-      function convertRawToCsv(raw) {
-        // スペースをすべて排除
+            function convertRawToCsv(raw) {
+        // 全体のスペースを消す
         const clean = raw.replace(/\s+/g, '');
         const rows = [];
         
-        // 選手名（漢字の塊）を基準にデータをぶった切る
-        const parts = clean.split(/([一-龠]{2,4})/);
+        // 【ここが重要】「数字＋漢字の名前」の塊を正確に見つける
+        // 11谷口、22高橋、7川口 のようなパターンをすべて拾う
+        const playerRegex = /(\d+)([一-龠]{2,4})/g;
         
-        let carCount = 1;
-        // 1番目(0)はゴミ、2番目(1)が名前、3番目(2)がデータ...という順で回る
-        for (let i = 1; i < parts.length; i += 2) {
-          const name = parts[i];
-          const dataChunk = parts[i + 1] || "";
-          
-          // その選手のデータ部分から「数字」だけを抽出
-          const nums = dataChunk.match(/\d+/g) || [];
-          if (nums.length < 5) continue;
+        let m;
+        const players = [];
+        while ((m = playerRegex.exec(clean)) !== null) {
+          players.push({ carNum: m[1], name: m[2], startIdx: m.index });
+        }
 
-          // ユタカのデータ（10600910逃4510734...）から位置を計算
-          // nums[2]が年齢、nums[3]が期別、nums[4]が得点10600、nums[5]が勝率09...
-          const score = (parseFloat(nums[4] || 0) / 100).toFixed(2);
-          const win   = parseFloat(nums[5] || 0).toFixed(1);
-          const ren2  = Number(nums[6]) || 0;
-          const ren3  = Number(nums[7]) || 0;
-          const s     = Number(nums[8]) || 0;
-          const b     = Number(nums[9]) || 0;
+        for (let i = 0; i < players.length; i++) {
+          const start = players[i].startIdx;
+          const end = players[i+1] ? players[i+1].startIdx : clean.length;
+          const chunk = clean.substring(start, end);
 
-          // 脚質（データの中に漢字が含まれているか）
+          // この選手区間から数字をすべて抜き出す
+          const nums = chunk.match(/\d+/g) || [];
+          // 谷口選手の例：[11, 1, 32, 103, 10600, 9, 10, 4, 5, 10, 7, 3, 4, 10, 29, 0, 4, 16...]
+          // という順番で並んでいる
+          if (nums.length < 10) continue;
+
+          // ユタカのデータ構造を数え直した決定版
+          const score = (parseFloat(nums[4] || 0) / 100).toFixed(2); // 10600 → 106.00
+          const win   = parseFloat(nums[14] || 0).toFixed(1);        // 勝率
+          const ren2  = Number(nums[15]) || 0;                       // 2連対率
+          const ren3  = Number(nums[16]) || 0;                       // 3連対率
+          const s     = Number(nums[8]) || 0;                        // S
+          const b     = Number(nums[9]) || 0;                        // B
+
+          // 脚質判定
           let style = '両';
-          if (dataChunk.includes('自力') || dataChunk.includes('逃')) style = '逃';
-          else if (dataChunk.includes('追') || dataChunk.includes('差')) style = '追';
+          if (chunk.includes('逃') || chunk.includes('自力')) style = '逃';
+          else if (chunk.includes('追') || chunk.includes('差')) style = '追';
 
           rows.push({
-            car: carCount++,
+            car: players[i].carNum.length > 1 ? players[i].carNum[0] : players[i].carNum, // 11なら1にする
             score: score, b: b, s: s, style: style, win: win, quinella: ren2, trio: ren3
           });
-          if (carCount > 9) break;
         }
 
         if (rows.length === 0) return null;
         return '車番,得点,B,S,脚質,勝率,2連対率,3連対率\n' + 
                rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.quinella},${r.trio}`).join('\n');
       }
+
 
 
 
