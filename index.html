@@ -104,40 +104,45 @@
       }
 
       // --- データ整形：数字の塊から脚質を自動判定 ---
-                           function convertRawToCsv(raw) {
+                                 function convertRawToCsv(raw) {
         const clean = raw.replace(/\s+/g, '');
         const rows = [];
-        // 名前（漢字）と数字の塊をセットで拾う
-        const playerRegex = /(\d+)([一-龠]{2,4})(\d+)/g;
+        
+        // 漢字の名前と、その後に続く数字やコメントを一人分として区切る
+        const playerRegex = /([一-龠]{2,4})(\d{10,}.*?)(?=[一-龠]{2,4}\d{10,}|$)/g;
         
         let m;
         while ((m = playerRegex.exec(clean)) !== null) {
-          const carFull = m[1]; // "11" など
-          const name = m[2];    // "谷口遼平"
-          const s = m[3];       // "10600910..." (数字の塊)
+          const name = m[1];
+          const fullData = m[2]; // 数字とコメントの塊
+          const nums = fullData.match(/\d+/g)?.join('') || "";
 
-          if (s.length < 10) continue;
+          if (nums.length < 10) continue;
 
-          // 車番を特定（11なら1、7なら7）
-          const car = carFull.length > 1 && carFull[0] === carFull[1] ? carFull[0] : carFull;
+          // ユタカのデータ構造に合わせて正確に切り出し
+          // [0-1]歳(53) [2-3]期(74) [4-7]得点(6895) [8]予想? [9-11]勝率(10.5) [12-14]2連(15.7)...
+          
+          const score = (parseFloat(nums.substring(4, 8)) / 100).toFixed(2); // 6895 -> 68.95
+          
+          // 勝率・連対率は、データによって3桁だったり4桁だったりするので
+          // 田中選手の「105157315」という並びから推測：
+          const win   = (parseFloat(nums.substring(9, 12)) / 10).toFixed(1); // 105 -> 10.5
+          const ren2  = (parseFloat(nums.substring(12, 15)) / 10).toFixed(1); // 157 -> 15.7
+          const ren3  = (parseFloat(nums.substring(15, 18)) / 10).toFixed(1); // 315 -> 31.5
 
-          // お掃除済みデータなので、位置は固定でOK！
-          const score = (parseFloat(s.substring(0, 5)) / 100).toFixed(2);
-          const win   = parseFloat(s.substring(5, 7)).toFixed(1);
-          const ren2  = Number(s.substring(7, 9)) || 0;
-          const ren3  = Number(s.substring(9, 11)) || 0;
-          const st    = Number(s.substring(11, 13)) || 0; // S
-          const bk    = Number(s.substring(13, 15)) || 0; // B
+          // BとSは、元データから「逃・捲」などの漢字が消えているので
+          // もし取りたい場合はショートカット側での調整が必要だけど、まずは主要な数字を出すよ
+          const s = 0; 
+          const b = 0;
 
+          // 脚質判定（データ内のコメントから推測）
           let style = '両';
-          if (clean.includes(name)) {
-            const context = clean.substr(clean.indexOf(name), 50);
-            if (context.includes('逃') || context.includes('自力')) style = '逃';
-            else if (context.includes('追') || context.includes('差')) style = '追';
-          }
+          if (fullData.includes('自力') || fullData.includes('逃')) style = '逃';
+          else if (fullData.includes('目標') || fullData.includes('追')) style = '追';
 
           rows.push({
-            car: car, score: score, b: bk, s: st, style: style, win: win, quinella: ren2, trio: ren3
+            car: (rows.length + 1), // 車番は上から順に
+            score: score, b: b, s: s, style: style, win: win, quinella: ren2, trio: ren3
           });
         }
 
