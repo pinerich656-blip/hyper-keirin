@@ -86,13 +86,12 @@
     </section>
   </div>
 
-      <script>
+         <script>
     document.addEventListener('DOMContentLoaded', () => {
       let latestResult = null;
 
-      // --- ユタカ特製：スコアリングロジック ---
+      // --- スコア計算ロジック（ユタカ秘伝） ---
       function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
       function scoreRacer(r, pos, maxB, maxS) {
         const front = clamp(((r.S / Math.max(1, maxS)) * 2) + (pos?.pos === 0 ? 0.5 : 0), 0, 3);
         const initiative = clamp(((r.B / Math.max(1, maxB)) * 2) + (r.style === '逃' ? 0.8 : r.style === '両' ? 0.4 : 0), 0, 3);
@@ -100,57 +99,39 @@
         const late = clamp((r.win / 40) + (r.style === '両' ? 0.8 : r.style === '追' ? 0.4 : 0), 0, 3);
         const elite = clamp((r.win / 35) + (r.quinella / 60) + (r.score / 110), 0, 3);
         const soloRisk = clamp((pos?.pos === 1 ? 1.0 : 0) + (r.B >= 8 ? 0.5 : 0), 0, 3);
-
         const total = (front * 0.15) + (initiative * 0.25) + (anchor * 0.20) + (late * 0.15) + (elite * 0.20) - (soloRisk * 0.10);
         return { front, initiative, anchor, late, elite, soloRisk, total: Number(total.toFixed(2)) };
       }
 
-      // --- ユタカ特製：データ解析ロジック ---
-            function convertRawToCsv(raw) {
-        // スペースを消して、扱いやすくする
+      // --- データ整形：数字の塊から脚質を自動判定 ---
+      function convertRawToCsv(raw) {
         const cleanRaw = raw.replace(/\s+/g, '');
         const rows = [];
-        
-        // ユタカのデータ形式に特化した切り出しナイフ
-        // 漢字(名前) + 県名 + 年齢(2桁) + 得点(5桁程度) + 各種データ
-        const playerRegex = /([一-龠]{2,})[一-龠]{2}\d{2}(\d{5,})/g;
+        const playerRegex = /([一-龠]{2,3})[一-龠]{2}\d{2}(\d{15,})/g;
         
         let m, carCount = 1;
         while ((m = playerRegex.exec(cleanRaw)) !== null) {
-          const name = m[1];
-          const dataStr = m[2]; // 得点以降の数字の塊
-          
-          // 数字の塊から必要なデータを順番に切り出す
-          // 例: 109100002021313792...
-          // 得点は最初の5桁 (109.10)
+          const dataStr = m[2]; 
           const score = (parseFloat(dataStr.substring(0, 5)) / 100).toFixed(2);
-          
-          // 後ろから遡ってBやSを特定する（競輪データの並び規則を活用）
-          // 末尾の「92」は倍率や定型句なので、その前にあるBやSを拾う
-          // ※ユタカのデータは末尾付近にB(バック)とS(スタンディング)が並ぶ
-          const b = Number(dataStr.slice(-6, -4)) || 0; 
-          const s = Number(dataStr.slice(-8, -6)) || 0;
-          
+          const win   = (parseFloat(dataStr.substring(5, 7))).toFixed(1);
+          const ren2  = Number(dataStr.substring(7, 9)) || 0;
+          const ren3  = Number(dataStr.substring(9, 11)) || 0;
+          const s = Number(dataStr.substring(11, 13)) || 0;
+          const b = Number(dataStr.substring(13, 15)) || 0;
+
+          let style = '両';
+          if (b >= 2) style = '逃';
+          else if (b === 0 && ren2 > 10) style = '追';
+
           rows.push({
-            car: carCount++,
-            name: name,
-            score: score,
-            b: b,
-            s: s,
-            style: '自在', // 判定で埋める
-            win: (Number(dataStr.substring(5, 7)) || 0).toFixed(1),
-            ren2: Number(dataStr.substring(7, 9)) || 0,
-            ren3: Number(dataStr.substring(9, 11)) || 0
+            car: carCount++, score: score, b: b, s: s, style: style, win: win, quinella: ren2, trio: ren3
           });
-          
-          if (carCount > 9) break; // 9車立まで
+          if (carCount > 9) break;
         }
-        
         if (rows.length === 0) return null;
         return '車番,得点,B,S,脚質,勝率,2連対率,3連対率\n' + 
-               rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.ren2},${r.ren3}`).join('\n');
+               rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.quinella},${r.trio}`).join('\n');
       }
-
 
       function parseCSV(text) {
         const lines = text.trim().split('\n');
@@ -171,118 +152,98 @@
           const txt = await res.text();
           document.getElementById('rawInput').value = txt;
           const csv = convertRawToCsv(txt);
-          if(csv) {
-            document.getElementById('csvInput').value = csv;
-            btn.textContent = '読込＆変換成功';
-          }
+          if(csv) document.getElementById('csvInput').value = csv;
+          btn.textContent = '読込＆変換成功';
         } catch (e) { alert('読込失敗'); }
         setTimeout(() => btn.textContent = 'GitHubから最新読込', 2000);
       });
 
-      // --- AI判定ボタン ---
+      // --- 【追加】手動での「変換実行」ボタン ---
+      document.getElementById('convertBtn').addEventListener('click', () => {
+        const raw = document.getElementById('rawInput').value;
+        const csv = convertRawToCsv(raw);
+        if(csv) {
+          document.getElementById('csvInput').value = csv;
+        } else {
+          alert('データの形式が正しくないようです');
+        }
+      });
+
+      // --- AI判定 ---
       document.getElementById('analyzeBtn').addEventListener('click', () => {
         const csvVal = (document.getElementById('csvInput').value || "").trim();
         const lineStr = (document.getElementById('lineInput').value || "").trim();
         if (!csvVal || !lineStr) return alert('入力が不足しています');
-
+        
         const racers = parseCSV(csvVal);
         const lineup = lineStr.split('/').map(t => t.split('-').map(Number));
         const posMap = new Map();
         lineup.forEach((team, i) => team.forEach((num, j) => posMap.set(num, { team: i, pos: j })));
-
+        
         const maxB = Math.max(...racers.map(r => r.B), 1);
         const maxS = Math.max(...racers.map(r => r.S), 1);
-
         const scored = racers.map(r => ({ ...r, pos: posMap.get(r.num), ai: scoreRacer(r, posMap.get(r.num), maxB, maxS) }));
-        
-        const leaders = scored.filter(r => r.ai.initiative >= 1.5);
-        let structure = leaders.length >= 3 ? '踏み合い戦' : (leaders.length === 2 ? '二分戦' : '先行一車');
-
         const sorted = [...scored].sort((a,b) => b.ai.total - a.ai.total);
-        renderResult(sorted, structure);
+        
+        renderResult(sorted);
       });
 
-      function renderResult(scored, structure) {
-        // 結果エリアを表示（エラー防止のため存在確認）
+      function renderResult(scored) {
         const resDiv = document.getElementById('result');
         if (resDiv) resDiv.classList.remove('hidden');
-
-        document.getElementById('structureText').textContent = `構造: ${structure}`;
-        document.getElementById('conclusionText').textContent = `${scored[0].num}番を軸に評価。`;
-        
         const tbody = document.querySelector('#scoreTable tbody');
         if (tbody) {
           tbody.innerHTML = '';
           scored.forEach(r => {
             const tr = document.createElement('tr');
-            if (r.ai.total >= 1.9) tr.className = 'score-high';
-            else if (r.ai.total >= 1.5) tr.className = 'score-mid';
             tr.innerHTML = `<td>${r.num}</td><td>${r.ai.front.toFixed(1)}</td><td>${r.ai.initiative.toFixed(1)}</td><td>${r.ai.anchor.toFixed(1)}</td><td>${r.ai.late.toFixed(1)}</td><td>${r.ai.elite.toFixed(1)}</td><td>${r.ai.soloRisk.toFixed(1)}</td><td>${r.ai.total.toFixed(2)}</td><td>ライン${(r.pos?.team + 1) || '単'}</td>`;
             tbody.appendChild(tr);
           });
         }
-        
         const top = scored[0].num;
-        const s2 = scored[1] ? scored[1].num : '';
-        const s3 = scored[2] ? scored[2].num : '';
-        const s4 = scored[3] ? scored[3].num : '';
-
-        const mainBets = [];
-        if (top && s2 && s3) mainBets.push(`${top}-${s2}-${s3}`);
-        if (top && s2 && s4) mainBets.push(`${top}-${s2}-${s4}`);
-
-        const subBets = [];
-        if (top && s3 && s2) subBets.push(`${top}-${s3}-${s2}`);
-        if (top && s3 && s4) subBets.push(`${top}-${s3}-${s4}`);
-        if (s2 && top && s3) subBets.push(`${s2}-${top}-${s3}`);
-
-        document.getElementById('mainLine').innerHTML = mainBets.map(v => `<li class="bet-main">${v}</li>`).join('');
-        document.getElementById('subLine').innerHTML = subBets.map(v => `<li class="bet-sub">${v}</li>`).join('');
-
-        latestResult = { main: mainBets, sub: subBets };
+        const s2 = scored[1]?.num || '';
+        const s3 = scored[2]?.num || '';
+        document.getElementById('conclusionText').textContent = `${top}番を軸に評価。`;
+        document.getElementById('mainLine').innerHTML = `<li class="bet-main">${top}-${s2}-${s3}</li>`;
+        latestResult = { main: [`${top}-${s2}-${s3}`], sub: [] };
       }
 
       // --- 的中チェック ---
       document.getElementById('checkHitBtn').addEventListener('click', () => {
         const actual = (document.getElementById('actualResult').value || '').trim();
         const hitResultArea = document.getElementById('hitResult');
-        if (!actual) { hitResultArea.textContent = '結果を入力してください。'; return; }
-        if (!latestResult) { hitResultArea.textContent = '先にAI判定をしてください。'; return; }
-
+        if (!actual || !latestResult) return;
         if (latestResult.main.includes(actual)) {
-          hitResultArea.className = 'hit-main'; hitResultArea.textContent = `◎ 本線的中: ${actual}`;
-        } else if (latestResult.sub.includes(actual)) {
-          hitResultArea.className = 'hit-sub'; hitResultArea.textContent = `○ 対抗・押さえ的中: ${actual}`;
+          hitResultArea.className = 'hit-main';
+          hitResultArea.textContent = `◎ 的中: ${actual}`;
         } else {
-          hitResultArea.className = 'hit-miss'; hitResultArea.textContent = `× 不的中: ${actual}`;
+          hitResultArea.className = 'hit-miss';
+          hitResultArea.textContent = `× 不的中: ${actual}`;
         }
       });
 
-      // --- クリアボタン ---
+      // --- 全クリア ---
       document.getElementById('clearBtn').addEventListener('click', () => {
         document.getElementById('rawInput').value = '';
         document.getElementById('csvInput').value = '';
         document.getElementById('lineInput').value = '';
         document.getElementById('actualResult').value = '';
-        
         const resDiv = document.getElementById('result');
         if (resDiv) resDiv.classList.add('hidden');
-        
         const hitRes = document.getElementById('hitResult');
         if (hitRes) {
           hitRes.innerHTML = '';
-          hitRes.className = 'muted';
+          hitRes.className = '';
           hitRes.textContent = '結果を入れて「的中チェック」を押してください。';
         }
-        
         const tbody = document.querySelector('#scoreTable tbody');
         if (tbody) tbody.innerHTML = '';
-        
         latestResult = null;
       });
-
     });
   </script>
+
+
 
 </body>
 </html>
