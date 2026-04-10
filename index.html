@@ -957,7 +957,7 @@ B
         }
       });
 
-            document.getElementById('checkResultBtn').addEventListener('click', checkHit);
+                  document.getElementById('checkResultBtn').addEventListener('click', checkHit);
 
       document.getElementById('clearBtn').addEventListener('click', () => {
         latestResult = null;
@@ -976,12 +976,11 @@ B
         document.querySelector('#scoreTable tbody').innerHTML = '';
       });
 
-      // --- GitHubから自動で読み込む機能 ---
+      // --- GitHubから自動で読み込んで変換する機能（最新統合版） ---
       document.getElementById('loadGithubBtn').addEventListener('click', async () => {
         const btn = document.getElementById('loadGithubBtn');
         const user = 'pinerich656-blip';
         const repo = 'hyper-keirin';
-        // キャッシュを避けるためにタイムスタンプ(?t=...)を追加
         const url = `https://raw.githubusercontent.com/${user}/${repo}/main/data.json?t=${new Date().getTime()}`;
 
         try {
@@ -993,10 +992,22 @@ B
           
           const rawContent = await response.text();
           
+          // 1. 上の箱に取得したデータをセット
           document.getElementById('rawInput').value = rawContent;
-          document.getElementById('convertBtn').click();
           
-          btn.textContent = '読込成功！';
+          // 2. そのデータを使ってCSV変換を実行
+          const csv = convertRawToCsv(rawContent);
+          
+          // 3. 変換結果を下の箱にセット
+          if (csv && !csv.includes('エラー')) {
+            document.getElementById('csvPreview').textContent = csv;
+            document.getElementById('csvInput').value = csv;
+            btn.textContent = '読込＆変換成功！';
+          } else {
+            document.getElementById('csvPreview').textContent = csv;
+            btn.textContent = '変換エラー';
+          }
+
           setTimeout(() => { 
             btn.textContent = 'GitHubから最新読込'; 
             btn.disabled = false; 
@@ -1008,9 +1019,8 @@ B
           btn.disabled = false;
         }
       });
-      // -----------------------------------
-
     }); // DOMContentLoadedの閉じ
+
   </script>
 </body>
 </html>
