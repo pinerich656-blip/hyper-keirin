@@ -86,7 +86,7 @@
     </section>
   </div>
 
-    <script>
+      <script>
     document.addEventListener('DOMContentLoaded', () => {
       let latestResult = null;
 
@@ -157,8 +157,8 @@
 
       // --- AI判定ボタン ---
       document.getElementById('analyzeBtn').addEventListener('click', () => {
-        const csvVal = document.getElementById('csvInput').value;
-        const lineStr = document.getElementById('lineInput').value;
+        const csvVal = (document.getElementById('csvInput').value || "").trim();
+        const lineStr = (document.getElementById('lineInput').value || "").trim();
         if (!csvVal || !lineStr) return alert('入力が不足しています');
 
         const racers = parseCSV(csvVal);
@@ -166,33 +166,37 @@
         const posMap = new Map();
         lineup.forEach((team, i) => team.forEach((num, j) => posMap.set(num, { team: i, pos: j })));
 
-        const maxB = Math.max(...racers.map(r => r.B));
-        const maxS = Math.max(...racers.map(r => r.S));
+        const maxB = Math.max(...racers.map(r => r.B), 1);
+        const maxS = Math.max(...racers.map(r => r.S), 1);
 
         const scored = racers.map(r => ({ ...r, pos: posMap.get(r.num), ai: scoreRacer(r, posMap.get(r.num), maxB, maxS) }));
         
-        const leaders = scored.filter(r => r.ai.initiative >= 2);
-        let structure = leaders.length >= 3 ? '踏み合い戦' : (leaders.length === 2 ? '崩壊戦' : '安定戦');
+        const leaders = scored.filter(r => r.ai.initiative >= 1.5);
+        let structure = leaders.length >= 3 ? '踏み合い戦' : (leaders.length === 2 ? '二分戦' : '先行一車');
 
         const sorted = [...scored].sort((a,b) => b.ai.total - a.ai.total);
         renderResult(sorted, structure);
       });
 
       function renderResult(scored, structure) {
-        document.getElementById('result').classList.remove('hidden');
-        document.getElementById('resultEmpty').classList.add('hidden');
+        // 結果エリアを表示（エラー防止のため存在確認）
+        const resDiv = document.getElementById('result');
+        if (resDiv) resDiv.classList.remove('hidden');
+
         document.getElementById('structureText').textContent = `構造: ${structure}`;
         document.getElementById('conclusionText').textContent = `${scored[0].num}番を軸に評価。`;
         
         const tbody = document.querySelector('#scoreTable tbody');
-        tbody.innerHTML = '';
-        scored.forEach(r => {
-          const tr = document.createElement('tr');
-          if (r.ai.total >= 1.9) tr.className = 'score-high';
-          else if (r.ai.total >= 1.5) tr.className = 'score-mid';
-          tr.innerHTML = `<td>${r.num}</td><td>${r.ai.front.toFixed(1)}</td><td>${r.ai.initiative.toFixed(1)}</td><td>${r.ai.anchor.toFixed(1)}</td><td>${r.ai.late.toFixed(1)}</td><td>${r.ai.elite.toFixed(1)}</td><td>${r.ai.soloRisk.toFixed(1)}</td><td>${r.ai.total.toFixed(2)}</td><td>ライン${(r.pos?.team + 1) || '単'}</td>`;
-          tbody.appendChild(tr);
-        });
+        if (tbody) {
+          tbody.innerHTML = '';
+          scored.forEach(r => {
+            const tr = document.createElement('tr');
+            if (r.ai.total >= 1.9) tr.className = 'score-high';
+            else if (r.ai.total >= 1.5) tr.className = 'score-mid';
+            tr.innerHTML = `<td>${r.num}</td><td>${r.ai.front.toFixed(1)}</td><td>${r.ai.initiative.toFixed(1)}</td><td>${r.ai.anchor.toFixed(1)}</td><td>${r.ai.late.toFixed(1)}</td><td>${r.ai.elite.toFixed(1)}</td><td>${r.ai.soloRisk.toFixed(1)}</td><td>${r.ai.total.toFixed(2)}</td><td>ライン${(r.pos?.team + 1) || '単'}</td>`;
+            tbody.appendChild(tr);
+          });
+        }
         
         const top = scored[0].num;
         const s2 = scored[1] ? scored[1].num : '';
@@ -214,19 +218,19 @@
         latestResult = { main: mainBets, sub: subBets };
       }
 
-      // --- 的中チェック（IDを修正） ---
+      // --- 的中チェック ---
       document.getElementById('checkHitBtn').addEventListener('click', () => {
         const actual = (document.getElementById('actualResult').value || '').trim();
-        const hitResult = document.getElementById('hitResult');
-        if (!actual) { hitResult.textContent = '結果を入力してください。'; return; }
-        if (!latestResult) { hitResult.textContent = '先にAI判定をしてください。'; return; }
+        const hitResultArea = document.getElementById('hitResult');
+        if (!actual) { hitResultArea.textContent = '結果を入力してください。'; return; }
+        if (!latestResult) { hitResultArea.textContent = '先にAI判定をしてください。'; return; }
 
         if (latestResult.main.includes(actual)) {
-          hitResult.className = 'hit-main'; hitResult.textContent = `◎ 本線的中: ${actual}`;
+          hitResultArea.className = 'hit-main'; hitResultArea.textContent = `◎ 本線的中: ${actual}`;
         } else if (latestResult.sub.includes(actual)) {
-          hitResult.className = 'hit-sub'; hitResult.textContent = `○ 対抗・押さえ的中: ${actual}`;
+          hitResultArea.className = 'hit-sub'; hitResultArea.textContent = `○ 対抗・押さえ的中: ${actual}`;
         } else {
-          hitResult.className = 'hit-miss'; hitResult.textContent = `× 不的中: ${actual}`;
+          hitResultArea.className = 'hit-miss'; hitResultArea.textContent = `× 不的中: ${actual}`;
         }
       });
 
@@ -236,12 +240,20 @@
         document.getElementById('csvInput').value = '';
         document.getElementById('lineInput').value = '';
         document.getElementById('actualResult').value = '';
-        document.getElementById('result').classList.add('hidden');
-        document.getElementById('resultEmpty').classList.remove('hidden');
-        document.getElementById('hitResult').innerHTML = '';
-        document.getElementById('hitResult').className = 'muted';
-        document.getElementById('hitResult').textContent = '結果を入れて「的中チェック」を押してください。';
-        document.querySelector('#scoreTable tbody').innerHTML = '';
+        
+        const resDiv = document.getElementById('result');
+        if (resDiv) resDiv.classList.add('hidden');
+        
+        const hitRes = document.getElementById('hitResult');
+        if (hitRes) {
+          hitRes.innerHTML = '';
+          hitRes.className = 'muted';
+          hitRes.textContent = '結果を入れて「的中チェック」を押してください。';
+        }
+        
+        const tbody = document.querySelector('#scoreTable tbody');
+        if (tbody) tbody.innerHTML = '';
+        
         latestResult = null;
       });
 
