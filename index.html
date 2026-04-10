@@ -491,61 +491,49 @@
         return rows;
       }
 
-                  function convertRawToCsv(raw) {
+      function convertRawToCsv(raw) {
         const lines = splitLines(raw);
         let rows = [];
 
-        // 1. まずは従来のテーブル形式を試す
+        // 1. 従来の形式を試す
         rows = convertTableStyle(lines);
+        if (rows.length === 0) rows = convertLinkedStyle(lines);
         if (rows.length > 0) return createCsvOutput(rows);
 
-        // 2. 従来のリンク形式を試す
-        rows = convertLinkedStyle(lines);
-        if (rows.length > 0) return createCsvOutput(rows);
-
-        // 3. 【新機能】詰まった1行データ（ユタカの最新形式）を解析
+        // 2. 【超・高感度解析】詰まった1行データ用
         const joined = lines.join(' ');
-        // パターン：名前(漢字) + 県名(漢字) + 年齢(2桁) + 得点(2-3桁) + 勝率など(数字の連続)
-        const blockRegex = /([一-龠]{2,})\s*([一-龠]{2,})\s*(\d{2})\s*(\d{2}\.\d{2})\s*([\d\.\s]+)/g;
-        let m;
+        
+        // 「漢字（名前・県名）」の後に続く「数字の塊」をセットで探す
+        // 漢字の塊([一-龠ぁ-んァ-ヶー]+) ＋ 数字やドットの塊([\d\.\s]+)
+        const playerBlocks = joined.match(/([一-龠ぁ-んァ-ヶー]{3,})\s*([\d\.\s]{10,})/g);
 
-        while ((m = blockRegex.exec(joined)) !== null) {
-          const score = parseFloat(m[4]);
-          const tail = m[5]; // 得点より後ろの数字の塊
-          const nums = tail.match(/\d+(\.\d+)?/g) || [];
-
-          // 詰まったデータから必要な数字を抽出（Winticketの並びに準拠）
-          if (nums.length >= 10) {
-            rows.push({
-              car: rows.length + 1,
-              score: score,
-              // インデックスはデータの並び順に合わせて調整
-              b: Number(nums[4]) || 0,
-              s: Number(nums[3]) || 0,
-              style: '両', // デフォルト
-              win: Number(nums[8]) || 0,
-              ren2: Number(nums[9]) || 0,
-              ren3: Number(nums[10]) || 0
-            });
-          }
+        if (playerBlocks) {
+          playerBlocks.forEach((block, index) => {
+            // ブロック内から数字（得点、勝率、B、Sなど）をすべて抜き出す
+            const nums = block.match(/\d+(\.\d+)?/g) || [];
+            
+            if (nums.length >= 5) {
+              // データの並び順から推測して割り当て
+              // nums[0]はおそらく年齢、nums[1]が得点、という具合に調整
+              rows.push({
+                car: index + 1,
+                score: parseFloat(nums[1]) || parseFloat(nums[0]) || 0,
+                b: Number(nums[5]) || 0,
+                s: Number(nums[4]) || 0,
+                style: '両',
+                win: parseFloat(nums[8]) || 0,
+                ren2: parseFloat(nums[9]) || 0,
+                ren3: parseFloat(nums[10]) || 0
+              });
+            }
+          });
         }
 
-        return rows.length > 0 ? createCsvOutput(rows) : '';
-      }
-
-      // CSV出力用の補助関数（重複を避けるため）
-      function createCsvOutput(rows) {
-        return [
-          '車番,得点,B,S,脚質,勝率,2連対率,3連対率',
-          ...rows.map(r => [
-            r.car,
-            formatVal(r.score, 2),
-            r.b, r.s, r.style,
-            formatVal(r.win, 1),
-            formatVal(r.ren2, 1),
-            formatVal(r.ren3, 1)
-          ].join(','))
-        ].join('\n');
+        if (rows.length > 0) {
+          return createCsvOutput(rows);
+        } else {
+          return "変換エラー：データ形式が解析できませんでした。";
+        }
       }
 
 
