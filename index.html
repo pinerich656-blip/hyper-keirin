@@ -104,47 +104,49 @@
       }
 
       // --- データ整形：数字の塊から脚質を自動判定 ---
-            function convertRawToCsv(raw) {
-        // スペースを消して解析しやすくする
-        const cleanRaw = raw.replace(/\s+/g, '');
+                  function convertRawToCsv(raw) {
+        // 1. まず「歳」「期」「岐阜」などの余計な文字を掃除して、解析しやすくする
+        // 2. 「谷口遼平」のような名前と、その後に続く数字をセットで抜き出す
         const rows = [];
+        const playerNames = raw.match(/[一-龠]{3,4}/g) || [];
         
-        // 選手名（2〜4文字）+ 県名（2〜3文字）+ 年齢(2桁) + 期(2〜3桁) を目印に選手を特定
-        // その後の数字の羅列をキャッチする
-        const playerRegex = /([一-龠]{2,4})[一-龠]{2,3}\d{2}歳\d{2,3}期(\d+)/g;
-        
-        let m, carCount = 1;
-        while ((m = playerRegex.exec(cleanRaw)) !== null) {
-          const name = m[1];
-          const dataStr = m[2]; // ここに 10600910... などの数字が詰まっている
+        // データの切れ端（谷口遼平〜、高橋晋也〜）で分割する
+        const segments = raw.split(/[1-9][1-9]?[一-龠]{3,4}/);
+        // 分割時に消えた先頭を除去
+        if (segments[0].length < 10) segments.shift();
 
-          // ユタカのデータ構造に合わせて正確に切り出し
-          // 得点(10600) 勝率(09) 2連(10) 3連(73) S(4) B(10) くらいの並びを想定
-          const score = (parseFloat(dataStr.substring(0, 5)) / 100).toFixed(2);
-          const win   = parseFloat(dataStr.substring(5, 7)).toFixed(1);
-          const ren2  = Number(dataStr.substring(7, 9)) || 0;
-          const ren3  = Number(dataStr.substring(9, 11)) || 0;
-          const s     = Number(dataStr.substring(11, 12)) || 0; // Sは1桁の場合が多い
-          const b     = Number(dataStr.substring(12, 14)) || 0; // Bはその後
+        // 選手ごとにループを回して数字を引っこ抜く
+        for (let i = 0; i < 9; i++) {
+          if (!segments[i]) break;
+          
+          // その選手の区間から数字だけを抽出
+          const nums = segments[i].match(/\d+/g);
+          if (!nums || nums.length < 5) continue;
 
-          // 脚質はデータ内の漢字から推測（自力、追、両など）
+          // 送ってくれたデータの並びに合わせてマッピング
+          // [106, 00, 9, 10, 7, 3, 4, 10, 29, 0, 4, 16, 58, 3, 3, 9, 2] みたいな配列になる
+          const score = (parseFloat(nums[0] + (nums[1] || "00")) / 100).toFixed(2); // 106と00を繋いで106.00
+          const win   = parseFloat(nums[8] || 0).toFixed(1);   // 勝率
+          const ren2  = Number(nums[9]) || 0;                  // 2連対率
+          const ren3  = Number(nums[10]) || 0;                 // 3連対率
+          const s     = Number(nums[4]) || 0;                  // S
+          const b     = Number(nums[5]) || 0;                  // B
+
+          // 脚質判定：セグメントの中に「自力」「追」「両」があるか探す
           let style = '両';
-          if (cleanRaw.includes(name)) {
-            const context = cleanRaw.substr(cleanRaw.indexOf(name), 40);
-            if (context.includes('自力') || context.includes('逃')) style = '逃';
-            else if (context.includes('追') || context.includes('差')) style = '追';
-          }
+          if (segments[i].includes('自力') || segments[i].includes('逃')) style = '逃';
+          else if (segments[i].includes('追') || segments[i].includes('差')) style = '追';
 
           rows.push({
-            car: carCount++, score: score, b: b, s: s, style: style, win: win, quinella: ren2, trio: ren3
+            car: i + 1, score: score, b: b, s: s, style: style, win: win, quinella: ren2, trio: ren3
           });
-          if (carCount > 9) break;
         }
         
         if (rows.length === 0) return null;
         return '車番,得点,B,S,脚質,勝率,2連対率,3連対率\n' + 
                rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.quinella},${r.trio}`).join('\n');
       }
+
 
 
       function parseCSV(text) {
