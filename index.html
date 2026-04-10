@@ -86,7 +86,7 @@
     </section>
   </div>
 
-  <script>
+    <script>
     document.addEventListener('DOMContentLoaded', () => {
       let latestResult = null;
 
@@ -128,6 +128,15 @@
                rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.ren2},${r.ren3}`).join('\n');
       }
 
+      function parseCSV(text) {
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) return [];
+        return lines.slice(1).map(l => {
+          const c = l.split(',');
+          return { num: Number(c[0]), score: Number(c[1]), B: Number(c[2]), S: Number(c[3]), style: c[4], win: Number(c[5]), quinella: Number(c[6]), trio: Number(c[7]) };
+        });
+      }
+
       // --- GitHub読込 ---
       document.getElementById('loadGithubBtn').addEventListener('click', async () => {
         const btn = document.getElementById('loadGithubBtn');
@@ -146,12 +155,13 @@
         setTimeout(() => btn.textContent = 'GitHubから最新読込', 2000);
       });
 
-      // --- AI判定ボタン (analyzeRaceロジック) ---
+      // --- AI判定ボタン ---
       document.getElementById('analyzeBtn').addEventListener('click', () => {
-        const racers = parseCSV(document.getElementById('csvInput').value);
+        const csvVal = document.getElementById('csvInput').value;
         const lineStr = document.getElementById('lineInput').value;
-        if (!racers.length || !lineStr) return alert('入力が不足しています');
+        if (!csvVal || !lineStr) return alert('入力が不足しています');
 
+        const racers = parseCSV(csvVal);
         const lineup = lineStr.split('/').map(t => t.split('-').map(Number));
         const posMap = new Map();
         lineup.forEach((team, i) => team.forEach((num, j) => posMap.set(num, { team: i, pos: j })));
@@ -161,54 +171,29 @@
 
         const scored = racers.map(r => ({ ...r, pos: posMap.get(r.num), ai: scoreRacer(r, posMap.get(r.num), maxB, maxS) }));
         
-        // 以前の解析ロジック（構造判定など）を実行
         const leaders = scored.filter(r => r.ai.initiative >= 2);
         let structure = leaders.length >= 3 ? '踏み合い戦' : (leaders.length === 2 ? '崩壊戦' : '安定戦');
 
         const sorted = [...scored].sort((a,b) => b.ai.total - a.ai.total);
-        latestResult = { scored: sorted, structure, main: [], sub: [] }; 
-
-        // 結果描画（ユタカのテーブル表示）
         renderResult(sorted, structure);
       });
 
       function renderResult(scored, structure) {
-        // 1. まず非表示にしていた結果エリアを表示する
-        const resDiv = document.getElementById('result');
-        const emptyDiv = document.getElementById('resultEmpty');
-        if (resDiv) resDiv.classList.remove('hidden');
-        if (emptyDiv) emptyDiv.classList.add('hidden');
-
-        // 2. レース構造と結論を表示
+        document.getElementById('result').classList.remove('hidden');
+        document.getElementById('resultEmpty').classList.add('hidden');
         document.getElementById('structureText').textContent = `構造: ${structure}`;
         document.getElementById('conclusionText').textContent = `${scored[0].num}番を軸に評価。`;
         
-        // 3. 選手スコアテーブルの作成
         const tbody = document.querySelector('#scoreTable tbody');
-        if (tbody) {
-          tbody.innerHTML = '';
-          scored.forEach(r => {
-            const tr = document.createElement('tr');
-            if (r.ai.total >= 1.9) tr.className = 'score-high';
-            else if (r.ai.total >= 1.5) tr.className = 'score-mid';
-            
-            const memo = `ライン${(r.pos?.team + 1) || '単'}`;
-            tr.innerHTML = `
-              <td>${r.num}</td>
-              <td>${r.ai.front.toFixed(1)}</td>
-              <td>${r.ai.initiative.toFixed(1)}</td>
-              <td>${r.ai.anchor.toFixed(1)}</td>
-              <td>${r.ai.late.toFixed(1)}</td>
-              <td>${r.ai.elite.toFixed(1)}</td>
-              <td>${r.ai.soloRisk.toFixed(1)}</td>
-              <td>${r.ai.total.toFixed(2)}</td>
-              <td>${memo}</td>
-            `;
-            tbody.appendChild(tr);
-          });
-        }
+        tbody.innerHTML = '';
+        scored.forEach(r => {
+          const tr = document.createElement('tr');
+          if (r.ai.total >= 1.9) tr.className = 'score-high';
+          else if (r.ai.total >= 1.5) tr.className = 'score-mid';
+          tr.innerHTML = `<td>${r.num}</td><td>${r.ai.front.toFixed(1)}</td><td>${r.ai.initiative.toFixed(1)}</td><td>${r.ai.anchor.toFixed(1)}</td><td>${r.ai.late.toFixed(1)}</td><td>${r.ai.elite.toFixed(1)}</td><td>${r.ai.soloRisk.toFixed(1)}</td><td>${r.ai.total.toFixed(2)}</td><td>ライン${(r.pos?.team + 1) || '単'}</td>`;
+          tbody.appendChild(tr);
+        });
         
-        // 4. 買い目（本線・対抗）の生成
         const top = scored[0].num;
         const s2 = scored[1] ? scored[1].num : '';
         const s3 = scored[2] ? scored[2].num : '';
@@ -223,91 +208,46 @@
         if (top && s3 && s4) subBets.push(`${top}-${s3}-${s4}`);
         if (s2 && top && s3) subBets.push(`${s2}-${top}-${s3}`);
 
-        // 5. 画面に買い目を表示
         document.getElementById('mainLine').innerHTML = mainBets.map(v => `<li class="bet-main">${v}</li>`).join('');
         document.getElementById('subLine').innerHTML = subBets.map(v => `<li class="bet-sub">${v}</li>`).join('');
 
-        // 6. 重要：的中チェック用にデータをグローバル変数に保存
-        // (関数の一番外で let latestResult = null; と宣言されている前提)
-        latestResult = { 
-          main: mainBets, 
-          sub: subBets 
-        };
+        latestResult = { main: mainBets, sub: subBets };
       }
 
-
-
-      function parseCSV(text) {
-        const lines = text.trim().split('\n');
-        if (lines.length < 2) return [];
-        return lines.slice(1).map(l => {
-          const c = l.split(',');
-          return { num: Number(c[0]), score: Number(c[1]), B: Number(c[2]), S: Number(c[3]), style: c[4], win: Number(c[5]), quinella: Number(c[6]), trio: Number(c[7]) };
-        });
-      }
-
-                // --- 的中チェック（完全判定版） ---
-      document.getElementById('checkResultBtn').addEventListener('click', () => {
+      // --- 的中チェック（IDを修正） ---
+      document.getElementById('checkHitBtn').addEventListener('click', () => {
         const actual = (document.getElementById('actualResult').value || '').trim();
         const hitResult = document.getElementById('hitResult');
+        if (!actual) { hitResult.textContent = '結果を入力してください。'; return; }
+        if (!latestResult) { hitResult.textContent = '先にAI判定をしてください。'; return; }
 
-        if (!actual) {
-          hitResult.className = 'muted';
-          hitResult.textContent = '結果を入力してください。';
-          return;
-        }
-
-        if (!latestResult || !latestResult.main) {
-          hitResult.className = 'muted';
-          hitResult.textContent = '先にAI判定をしてください。';
-          return;
-        }
-
-        const isMainHit = latestResult.main.includes(actual);
-        const isSubHit = latestResult.sub.includes(actual);
-
-        if (isMainHit) {
-          hitResult.className = 'hit-main';
-          hitResult.textContent = `◎ 本線的中: ${actual}`;
-        } else if (isSubHit) {
-          hitResult.className = 'hit-sub';
-          hitResult.textContent = `○ 対抗・押さえ的中: ${actual}`;
+        if (latestResult.main.includes(actual)) {
+          hitResult.className = 'hit-main'; hitResult.textContent = `◎ 本線的中: ${actual}`;
+        } else if (latestResult.sub.includes(actual)) {
+          hitResult.className = 'hit-sub'; hitResult.textContent = `○ 対抗・押さえ的中: ${actual}`;
         } else {
-          hitResult.className = 'hit-miss';
-          hitResult.textContent = `× 不的中: ${actual}`;
+          hitResult.className = 'hit-miss'; hitResult.textContent = `× 不的中: ${actual}`;
         }
       });
 
-
-      // --- クリアボタン（修正版） ---
+      // --- クリアボタン ---
       document.getElementById('clearBtn').addEventListener('click', () => {
-        // すべての入力欄を空にする
         document.getElementById('rawInput').value = '';
         document.getElementById('csvInput').value = '';
         document.getElementById('lineInput').value = '';
         document.getElementById('actualResult').value = '';
-        
-        // 結果表示を隠して初期状態に戻す
-        const resultDiv = document.getElementById('result');
-        if (resultDiv) resultDiv.classList.add('hidden');
-        
-        const emptyDiv = document.getElementById('resultEmpty');
-        if (emptyDiv) emptyDiv.classList.remove('hidden');
-        
-        // 的中チェックの表示をリセット
-        const hitRes = document.getElementById('hitResult');
-        hitRes.innerHTML = '';
-        hitRes.className = 'muted';
-        hitRes.textContent = '結果を入れて「的中チェック」を押してください。';
-                // テーブルの中身を消す
-        const tbody = document.querySelector('#scoreTable tbody');
-        if (tbody) tbody.innerHTML = '';
-        
+        document.getElementById('result').classList.add('hidden');
+        document.getElementById('resultEmpty').classList.remove('hidden');
+        document.getElementById('hitResult').innerHTML = '';
+        document.getElementById('hitResult').className = 'muted';
+        document.getElementById('hitResult').textContent = '結果を入れて「的中チェック」を押してください。';
+        document.querySelector('#scoreTable tbody').innerHTML = '';
         latestResult = null;
       });
 
-    }); // DOMContentLoadedの閉じ
+    });
   </script>
+
 </body>
 </html>
 
