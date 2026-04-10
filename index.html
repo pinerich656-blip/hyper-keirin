@@ -104,41 +104,31 @@
       }
 
       // --- データ整形：数字の塊から脚質を自動判定 ---
-                               function convertRawToCsv(raw) {
-        const clean = raw.replace(/\s+/g, '');
+                                     function convertRawToCsv(raw) {
         const rows = [];
-        
-        // 名前（漢字）を起点に、次の名前が出るまでを一人分として区切る
-        const playerRegex = /([一-龠]{2,4})(\d{6,}.*?)(?=([一-龠]{2,4}\d{6,})|$)/g;
+        // 名前と数字の塊をセットで取得
+        const playerRegex = /([一-龠]{2,4}),([\d.,]+)/g;
         
         let m;
-        while ((m = playerRegex.exec(clean)) !== null) {
+        while ((m = playerRegex.exec(raw)) !== null) {
           const name = m[1];
-          const dataStr = m[2];
-          const allNums = dataStr.match(/\d+/g)?.join('') || "";
+          // カンマで数字をバラバラにする
+          const nums = m[2].split(',').filter(n => n.length > 0);
 
-          if (allNums.length < 8) continue;
+          if (nums.length < 5) continue;
 
-          // 【得点】は常に「年齢(2)期別(2)」の直後、つまり5文字目から4桁
-          const scoreStr = allNums.substring(4, 8);
-          const score = (parseFloat(scoreStr) / 100).toFixed(2);
-
-          // 【勝率・連対率】は、データの「一番最後」にあるはず。
-          // 後ろから順番に、3連(3桁)、2連(3桁)、勝率(3桁)と逆算して切り出す。
-          const len = allNums.length;
-          // ギア倍数などの余計な数字が後ろにある場合を考慮し、末尾から少し手前を狙う
-          const ren3  = (parseFloat(allNums.substring(len - 5, len - 2)) / 10).toFixed(1);
-          const ren2  = (parseFloat(allNums.substring(len - 8, len - 5)) / 10).toFixed(1);
-          const win   = (parseFloat(allNums.substring(len - 11, len - 8)) / 10).toFixed(1);
-
-          // 脚質判定
-          let style = '両';
-          if (dataStr.includes('自力') || dataStr.includes('逃')) style = '逃';
-          else if (dataStr.includes('目標') || dataStr.includes('追') || dataStr.includes('差')) style = '追';
+          // カンマ区切りなら、順番通りに取るだけ！
+          // nums[0]=年齢, nums[1]=期別, nums[2]=得点
+          const score = parseFloat(nums[2]).toFixed(2);
+          
+          // 勝率などは後ろから3つを狙い撃ち
+          const win   = nums[nums.length - 4] || "0.0";
+          const ren2  = nums[nums.length - 3] || "0.0";
+          const ren3  = nums[nums.length - 2] || "0.0";
 
           rows.push({
             car: (rows.length + 1),
-            score: score, b: 0, s: 0, style: style, win: win, quinella: ren2, trio: ren3
+            score: score, b: 0, s: 0, style: "両", win: win, quinella: ren2, trio: ren3
           });
         }
 
@@ -146,6 +136,7 @@
         return '車番,得点,B,S,脚質,勝率,2連対率,3連対率\n' + 
                rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.quinella},${r.trio}`).join('\n');
       }
+
 
 
 
