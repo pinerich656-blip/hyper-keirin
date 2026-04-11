@@ -106,7 +106,6 @@
       // --- データ整形：数字の塊から脚質を自動判定 ---
       function convertRawToCsv(rawText) {
   const rows = [];
-  // 全ての改行やスペースをバラバラにして、純粋な単語の列にする
   const clean = rawText.replace(/[\r\n\t,]+/g, " ").replace(/　/g, " ").trim();
   const parts = clean.split(/\s+/).filter(Boolean);
 
@@ -114,46 +113,50 @@
   while (i < parts.length) {
     const item = parts[i];
 
-    // 1. 漢字2文字以上の「名前」を見つける（見出し語は除外）
-    if (/[一-龠]{2,}/.test(item) && !/選手名|競走得点|勝率|対率|倍率|脚質/.test(item)) {
+    // 漢字2文字以上を名前として認識（見出し語は徹底除外）
+    if (/[一-龠]{2,}/.test(item) && !/選手名|競走得点|勝率|対率|倍率|脚質|地区|枠|車/.test(item)) {
       const name = item;
       let score = "0.00";
       let nums = [];
       let style = "両";
+      let segmentWords = [];
 
-      // 2. 次の名前が出てくるまで、その下の数字や文字を全部拾う
+      // 次の名前（または終了）までスキャン
       let j = i + 1;
-      while (j < parts.length && !(/[一-龠]{2,}/.test(parts[j]) && !/愛知勢|武田|中村君|君|勢へ/.test(parts[j]))) {
+      while (j < parts.length && !(/[一-龠]{2,}/.test(parts[j]) && !/愛知勢|武田|中村君|君|勢へ|徳島勢|関東勢|九州/.test(parts[j]))) {
         const val = parts[j];
-        
-        // 脚質キーワードをチェック
-        if (/自力|逃|捲/.test(val)) style = "逃";
-        if (/追|差|マーク|番手|目標/.test(val)) style = "追";
-        if (/臨機応変/.test(val)) style = "両";
+        segmentWords.push(val);
 
-        // 数字（整数も小数も）を順番にストックする
+        if (/自力|逃|捲/.test(val)) style = "逃";
+        else if (/追|差|マーク|番手|目標/.test(val)) style = "追";
+        else if (/臨機応変/.test(val)) style = "両";
+
         if (/^\d+(\.\d+)?$/.test(val)) {
           nums.push(val);
         }
         j++;
       }
 
-      // 3. 武田選手のデータ構造を解析（名前の後の数字の並びから推測）
-      if (nums.length >= 5) {
-        // 今回のデータでは、得点は「名前から4〜5番目」あたりにある
-        // nums[0]:年齢, nums[1]:期別, nums[2]:? , nums[3]:? , nums[4]:得点
-        // 安全に「70点〜120点」くらいの範囲の数字を得点として探す
-        let foundScore = nums.find(n => parseFloat(n) >= 60 && parseFloat(n) <= 130);
+      if (nums.length >= 3) {
+        // 得点：60〜130の範囲の数字、もしくは小数点のついた4〜5桁を優先
+        let foundScore = nums.find(n => (parseFloat(n) >= 60 && parseFloat(n) <= 130) || /^\d{2,3}\.\d{2}$/.test(n));
         score = foundScore ? parseFloat(foundScore).toFixed(2) : "0.00";
 
-        // 勝率・連対率は、ギア倍数(92や93)の直前にあることが多い
-        const gearIndex = nums.findIndex(n => n === "92" || n === "93" || n === "85" || n === "86");
+        // 勝率・連対率：
+        // ギア比（80〜100）っぽい数字がある場合はその直前3つ。
+        // ない場合は、とにかく「数字リストの最後の方」にある3つを拾う
         let win = "0.0", ren2 = "0.0", ren3 = "0.0";
+        let gearIdx = nums.findIndex(n => parseFloat(n) >= 85 && parseFloat(n) <= 100);
         
-        if (gearIndex >= 3) {
-          win  = nums[gearIndex - 3] || "0.0";
-          ren2 = nums[gearIndex - 2] || "0.0";
-          ren3 = nums[gearIndex - 1] || "0.0";
+        if (gearIdx >= 3) {
+          win = nums[gearIdx - 3];
+          ren2 = nums[gearIdx - 2];
+          ren3 = nums[gearIdx - 1];
+        } else if (nums.length >= 4) {
+          // ギア比が見つからない時の保険
+          win = nums[nums.length - 3];
+          ren2 = nums[nums.length - 2];
+          ren3 = nums[nums.length - 1];
         }
 
         rows.push({
@@ -163,13 +166,13 @@
           win: win, quinella: ren2, trio: ren3
         });
       }
-      i = j; // 次の選手へ
+      i = j;
     } else {
       i++;
     }
   }
 
-  if (rows.length === 0) return "エラー：選手データが解析できませんでした。";
+  if (rows.length === 0) return "エラー：解析できませんでした。";
 
   return '車番,得点,B,S,脚質,勝率,2連対率,3連対率\n' + 
          rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.quinella},${r.trio}`).join('\n');
