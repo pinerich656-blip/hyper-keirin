@@ -104,61 +104,80 @@
       }
 
       // --- データ整形：数字の塊から脚質を自動判定 ---
-    function convertRawToCsv(rawText) {
+ function convertRawToCsv(rawText) {
   const rows = [];
+  // 改行・スペース・カンマをすべて「単語リスト」に分解
   const clean = rawText.replace(/[\r\n\t,]+/g, " ").replace(/　/g, " ").trim();
   const parts = clean.split(/\s+/).filter(Boolean);
 
   let i = 0;
   while (i < parts.length) {
     const item = parts[i];
-    if (/[一-龠]{2,}/.test(item) && !/選手名|競走得点|勝率|対率|倍率|脚質|地区|枠|車/.test(item)) {
-      const name = item;
-      let score = "0.00";
-      let nums = [];
-      let style = "両";
 
+    // 漢字2文字以上の「名前」を見つける（見出し語は徹底除外）
+    if (/[一-龠]{2,}/.test(item) && !/枠|車|選手名|競走得点|勝率|対率|倍率|脚質|地区/.test(item)) {
+      
+      // 今回のデータ構造（武田選手バージョン）を正確にトレース
+      // i+0: 名前 (武田哲二)
+      // i+1: 県名 (京都)
+      // i+2: ランク (A3)
+      // i+3: 年齢 (55歳)
+      // i+4: 期別 (65期)
+      // i+5: 競走得点 (73.73) ←これを確実に拾う！
+      
+      let score = "0.00";
+      // i+5付近に「小数点つきの数字」があるはず
+      if (parts[i + 5] && /^\d{2,3}\.\d{2}$/.test(parts[i + 5])) {
+        score = parts[i + 5];
+      }
+
+      let style = "両";
+      let win = "0.0", ren2 = "0.0", ren3 = "0.0";
+      let s_val = 0, b_val = 0;
+
+      // その後のデータを25単語分くらいスキャンして詳細を拾う
       let j = i + 1;
-      while (j < parts.length && !(/[一-龠]{2,}/.test(parts[j]) && !/愛知勢|武田|中村君|君|勢へ|徳島勢|関東勢|九州/.test(parts[j]))) {
+      while (j < parts.length && !(/[一-龠]{2,}/.test(parts[j]) && !/臨機応変|愛知勢|武田|中村君|君|勢へ|福島/.test(parts[j]))) {
         const val = parts[j];
+
+        // SとBの値を特定
+        if (j === i + 6) s_val = val;
+        if (j === i + 7) b_val = val;
+
+        // 脚質の判定
         if (/自力|逃|捲/.test(val)) style = "逃";
         else if (/追|差|マーク|番手|目標/.test(val)) style = "追";
         else if (/臨機応変/.test(val)) style = "両";
-        if (/^\d+(\.\d+)?$/.test(val)) nums.push(val);
+
+        // ギア倍数（3.8〜3.9付近）を基準に勝率・連対率を逆算
+        if (/^3\.[89]\d$/.test(val)) {
+          win  = parts[j - 3] || "0.0";
+          ren2 = parts[j - 2] || "0.0";
+          ren3 = parts[j - 1] || "0.0";
+        }
         j++;
       }
 
-      if (nums.length >= 3) {
-        // 得点を取得
-        let foundScore = nums.find(n => (parseFloat(n) >= 60 && parseFloat(n) <= 130) || /^\d{2,3}\.\d{2}$/.test(n));
-        score = foundScore ? parseFloat(foundScore).toFixed(2) : "0.00";
-
-        // 勝率・連対率：ギア比（80〜100）を無視して、その「手前」の3つを取る
-        // ギア比は通常データの最後にあるので、後ろからスキャンして85〜94を見つけたら除外
-        let win = "0.0", ren2 = "0.0", ren3 = "0.0";
-        let validNums = nums.filter(n => {
-            const val = parseFloat(n);
-            // 85.0〜94.0のギア比っぽい数字、かつ整数、または末尾の特定の数字を捨てる
-            return !(val >= 85 && val <= 94 && n.length <= 2);
-        });
-
-        if (validNums.length >= 3) {
-          ren3 = validNums[validNums.length - 1];
-          ren2 = validNums[validNums.length - 2];
-          win  = validNums[validNums.length - 3];
-        }
-
-        rows.push({
-          car: rows.length + 1, score: score, b: 0, s: 0, style: style,
-          win: win, quinella: ren2, trio: ren3
-        });
-      }
-      i = j;
-    } else { i++; }
+      rows.push({
+        car: rows.length + 1,
+        score: score,
+        b: b_val, s: s_val,
+        style: style,
+        win: win,
+        quinella: ren2,
+        trio: ren3
+      });
+      
+      i = j; // 次の選手のスキャンへ
+    } else {
+      i++;
+    }
   }
+
   return '車番,得点,B,S,脚質,勝率,2連対率,3連対率\n' + 
          rows.map(r => `${r.car},${r.score},${r.b},${r.s},${r.style},${r.win},${r.quinella},${r.trio}`).join('\n');
 }
+
 
 
 
